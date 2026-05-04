@@ -37,7 +37,7 @@ This installs all dependencies listed in `package.json`, including:
 Create a file called `.env` in the project root. **This file must never be committed to GitHub** — confirm `.env` is listed in `.gitignore` before doing anything else.
 
 ```
-MONGO_URI=mongodb://ajhouse05_db_user:jeqzavuTYeeJ9jMf@ac-pfrgqh0-shard-00-00.mtvabyg.mongodb.net:27017,ac-pfrgqh0-shard-00-01.mtvabyg.mongodb.net:27017,ac-pfrgqh0-shard-00-02.mtvabyg.mongodb.net:27017/?ssl=true&replicaSet=atlas-job1jg-shard-0&authSource=admin&appName=capstone
+MONGO_URI=your_mongodb_connection_string_here
 PORT=5000
 ```
 
@@ -75,6 +75,7 @@ capstone/
 │   └── Comment.js      # Mongoose schema for comments
 ├── routes/
 │   └── animals.js      # All /api/animals route handlers
+├── client/             # Vue front-end (Vite project)
 ├── .env                # Local environment variables (never commit)
 ├── .gitignore
 ├── server.js           # Entry point — connects to DB and starts Express
@@ -133,8 +134,9 @@ Thunder Client is a VS Code extension. Install it from the Extensions tab if you
 ```json
 {
   "name": "Luna",
-  "species": "Dog",
-  "description": "Very fluffy"
+  "species": "dog",
+  "description": "Very fluffy",
+  "status": "missing"
 }
 ```
 - Copy the `_id` value from the response — you'll use it for all routes below.
@@ -147,7 +149,7 @@ Thunder Client is a VS Code extension. Install it from the Extensions tab if you
 | Get one | GET | `http://localhost:5000/api/animals/<_id>` | none |
 | Add comment | POST | `http://localhost:5000/api/animals/<_id>/comments` | `{ "author": "Alice", "body": "So cute!" }` |
 | Get comments | GET | `http://localhost:5000/api/animals/<_id>/comments` | none |
-| Update status | PATCH | `http://localhost:5000/api/animals/<_id>` | `{ "status": "adopted" }` |
+| Update status | PATCH | `http://localhost:5000/api/animals/<_id>` | `{ "status": "reunited" }` |
 
 **Expected status codes:**
 
@@ -155,7 +157,7 @@ Thunder Client is a VS Code extension. Install it from the Extensions tab if you
 |---|---|
 | `200 OK` | Successful GET or PATCH |
 | `201 Created` | Successful POST |
-| `400 Bad Request` | Missing a required field |
+| `400 Bad Request` | Missing a required field or invalid enum value |
 | `404 Not Found` | The ID doesn't exist |
 | `500` | Server error — check the terminal |
 
@@ -163,36 +165,100 @@ Thunder Client is a VS Code extension. Install it from the Extensions tab if you
 
 ## Part 2: Front-End Setup
 
-> *To be completed during Week 14.*
+The front-end is a Vue 3 single-page application built with Vite, located in the `client/` folder inside the repo. It uses Vue Router for navigation, Pinia for state management, and Leaflet for the interactive map.
 
-### Scaffold the Vite Project
+---
+
+### Prerequisites
+
+- Back-end server must be running on port 5000 before starting the front-end dev server (see Part 1)
+- Node.js v24 or later (same requirement as the back-end)
+
+---
+
+### Install Front-End Dependencies
+
+The `client/` folder has its own `package.json`. Install its dependencies separately from the back-end:
 
 ```bash
-# placeholder — update with actual commands used
-npm create vite@latest client -- --template react
 cd client
 npm install
 ```
 
-### Configure the API URL
+This installs:
+- `vue` — UI framework
+- `vue-router` — client-side routing
+- `pinia` — state management
+- `leaflet` — interactive maps (OpenStreetMap, no API key required)
+- `vite` + `@vitejs/plugin-vue` (dev) — build tooling
 
-Create a `.env` file inside the `client/` folder:
+> There is no separate `.env` file needed for the front-end. API calls are proxied through Vite directly to `http://localhost:5000` — this is configured in `vite.config.js` and requires no environment variable.
 
-```
-VITE_API_URL=http://localhost:5000
-```
-
-> In production this will point to your Railway URL instead. Never hardcode the URL directly in your components — always use `import.meta.env.VITE_API_URL`.
+---
 
 ### Run the Dev Server
+
+From inside the `client/` folder:
 
 ```bash
 npm run dev
 ```
 
-### Verify Front-End Connects to Back-End
+You should see:
 
-- *Document what you checked here — e.g. a fetch call that returns data, a component that renders animals from the API, etc.*
+```
+  VITE v5.x.x  ready in Xms
+
+  ➜  Local:   http://localhost:5173/
+```
+
+Open `http://localhost:5173` in your browser.
+
+---
+
+### Verify the Front-End Connects to the Back-End
+
+1. Make sure `npm run dev` is running in the `capstone/` root (the Express server on port 5000)
+2. Make sure `npm run dev` is also running in `client/` (the Vite server on port 5173)
+3. Open `http://localhost:5173` — you will be prompted to enter a display name
+4. Enter any name and click **Continue** — you should be taken to the home view
+5. If any animals exist in MongoDB, their cards will appear in the right panel and as markers on the map
+6. Open browser DevTools → **Network** tab — any call to `/api/animals` should return `200 OK`
+
+If you see network errors, confirm the back-end terminal still shows `Server running on port 5000` and that no firewall is blocking localhost connections.
+
+---
+
+### Screens and Routes
+
+| URL | Component | Description |
+|---|---|---|
+| `/` | `WelcomeView` | Display name prompt (redirects to `/home` if name already set) |
+| `/home` | `HomeView` | Split-panel map + filterable animal card grid |
+| `/listing/:id` | `ListingView` | Full animal profile, status controls, comments |
+| `/new` | `NewListingView` | Report form with photo upload and click-to-place map pin |
+
+All routes except `/` require a display name to be set (enforced by a router navigation guard). If a user visits any protected route directly without a name, they are redirected to `/`.
+
+---
+
+### Animal Schema Note
+
+During front-end development the `models/Animal.js` schema was updated to match the fields and status values the front-end uses. If you are setting up on a new machine, make sure your `Animal.js` matches this shape before testing:
+
+```js
+const animalSchema = new mongoose.Schema({
+    name:        { type: String, required: true },
+    species:     { type: String, required: true },
+    description: { type: String },
+    status:      { type: String, enum: ['missing', 'caring', 'reunited'], default: 'missing' },
+    photoUrl:    { type: String, default: '' },
+    location:    { lat: Number, lng: Number, label: String },
+    reportedBy:  { type: String, default: '' },
+}, { timestamps: true });
+```
+
+The valid status values are `missing`, `caring`, and `reunited`. Using any other value in a PATCH request will return a `400 Bad Request`.
 
 ---
 
