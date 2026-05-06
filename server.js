@@ -7,8 +7,14 @@ const app = express();
 
 const allowedOrigins = [
     'http://localhost:5173',
-    'https://ahouse74.github.io'
+    'https://ahouse74.github.io',
+    'https://capstone-server-production.up.railway.app/'
 ]
+
+app.get('/', (req, res) => {
+    res.json({ status: 'ok' });
+});
+
 app.use(cors({ origin: allowedOrigins }));
 
 app.use(express.json());
