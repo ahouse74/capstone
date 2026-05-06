@@ -1,5 +1,5 @@
 // All API calls proxy through Vite to http://localhost:5000
-const BASE = '/api'
+const BASE = `${import.meta.env.VITE_API_URL}/api`
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
