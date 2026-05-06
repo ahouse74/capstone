@@ -192,7 +192,30 @@ This installs:
 - `leaflet` — interactive maps (OpenStreetMap, no API key required)
 - `vite` + `@vitejs/plugin-vue` (dev) — build tooling
 
-> There is no separate `.env` file needed for the front-end. API calls are proxied through Vite directly to `http://localhost:5000` — this is configured in `vite.config.js` and requires no environment variable.
+---
+
+### Set the `VITE_API_URL` Environment Variable
+
+The front-end uses an environment variable to know which backend to talk to. Create two files inside the `client/` folder (not inside `src/`):
+
+`.env.development`:
+```
+VITE_API_URL=http://localhost:5000
+```
+
+`.env.production`:
+```
+VITE_API_URL=https://your-railway-url.up.railway.app
+```
+
+Replace the Railway URL with your actual deployed backend URL. Add both files to `.gitignore` — they must never be committed.
+
+In your API calls, reference the variable like this:
+```js
+const BASE = `${import.meta.env.VITE_API_URL}/api`
+```
+
+Vite automatically uses `.env.development` when running `npm run dev` and `.env.production` when running `npm run build`.
 
 ---
 
@@ -233,12 +256,14 @@ If you see network errors, confirm the back-end terminal still shows `Server run
 
 | URL | Component | Description |
 |---|---|---|
-| `/` | `WelcomeView` | Display name prompt (redirects to `/home` if name already set) |
-| `/home` | `HomeView` | Split-panel map + filterable animal card grid |
-| `/listing/:id` | `ListingView` | Full animal profile, status controls, comments |
-| `/new` | `NewListingView` | Report form with photo upload and click-to-place map pin |
+| `/#/` | `WelcomeView` | Display name prompt (redirects to `/#/home` if name already set) |
+| `/#/home` | `HomeView` | Split-panel map + filterable animal card grid |
+| `/#/listing/:id` | `ListingView` | Full animal profile, status controls, comments |
+| `/#/new` | `NewListingView` | Report form with photo upload and click-to-place map pin |
 
-All routes except `/` require a display name to be set (enforced by a router navigation guard). If a user visits any protected route directly without a name, they are redirected to `/`.
+All routes except `/#/` require a display name to be set (enforced by a router navigation guard). If a user visits any protected route directly without a name, they are redirected to `/#/`.
+
+> **Note:** The router uses `createWebHashHistory()` for GitHub Pages compatibility. This adds a `#` to all URLs. GitHub Pages is a static file host and cannot handle HTML5 history routing — switching to hash history was required to prevent 404 errors on page refresh or direct navigation.
 
 ---
 
@@ -264,14 +289,17 @@ The valid status values are `missing`, `caring`, and `reunited`. Using any other
 
 ## Part 3: Deployment
 
-> *To be completed during Week 15.*
-
 ### Deploy the Back-End to Railway
 
-1. Push your back-end code to GitHub
-2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub repo
-3. Select your repo
-4. *Document remaining steps here once completed*
+The back-end (`capstone-server`) is kept in a separate GitHub repository from the front-end. Railway deploys directly from that repo.
+
+1. Go to [railway.app](https://railway.app) and sign in with your GitHub account
+2. Click **New Project** → **Deploy from GitHub repo**
+3. Select your `capstone-server` repository
+4. Railway detects it as a Node.js project and begins the first build automatically
+5. The first deploy will fail because environment variables are not set yet — that is expected
+
+---
 
 ### Set Environment Variables in Railway
 
@@ -279,34 +307,79 @@ In the Railway dashboard → your service → **Variables** tab, add:
 
 | Variable | Value |
 |---|---|
-| `MONGO_URI` | Your Atlas connection string |
-| `PORT` | Railway sets this automatically — you may not need to add it |
+| `MONGO_URI` | Your full Atlas connection string (same value as your local `.env`) |
+
+Do not add `PORT` — Railway sets this automatically and injects it at runtime.
+
+After saving variables, go to the **Deployments** tab and click **Redeploy** on the latest deployment. Watch the logs — you should see:
+
+```
+Connected to MongoDB
+Server running on port XXXX
+```
+
+---
+
+### Verify the Deployed Back-End
+
+Open your Railway URL directly in the browser (e.g. `https://capstone-server-production.up.railway.app`). You should see:
+
+```json
+{ "status": "ok" }
+```
+
+If you see "Application failed to respond", check:
+- The `MONGO_URI` variable is set correctly in the Variables tab with no typos
+- MongoDB Atlas has **Allow Access From Anywhere** (`0.0.0.0/0`) set under Network Access — Railway uses dynamic IPs that change on every deploy, so a fixed IP whitelist will not work
+- The Railway Networking port matches the port your app actually binds to (check deploy logs for "Server running on port XXXX")
+
+---
 
 ### Deploy the Front-End to GitHub Pages
 
-- *Document steps here once completed*
+The front-end is deployed from the `capstone` repository using the `gh-pages` npm package.
 
-### Link Front-End to Deployed Back-End
+1. Make sure `.env.production` inside `client/` has the correct Railway URL:
+   ```
+   VITE_API_URL=https://capstone-server-production.up.railway.app
+   ```
+2. From inside the `client/` folder, build and deploy:
+   ```bash
+   npm run build
+   npm run deploy
+   ```
+   This builds using `.env.production` (baking in the Railway URL) and pushes the `dist/` folder to the `gh-pages` branch of your repo.
+3. In your GitHub repository → **Settings** → **Pages**, confirm the source is set to the `gh-pages` branch
 
-Update the `VITE_API_URL` in your front-end deployment settings to point to your Railway URL:
+Your site will be available at `https://ahouse74.github.io/capstone/` or your custom domain if one is configured.
 
-```
-VITE_API_URL=https://your-app.up.railway.app
-```
+---
+
+### Link the Front-End to the Deployed Back-End
+
+The connection is made through the `VITE_API_URL` variable in `.env.production`. When you run `npm run build`, Vite bakes that URL into the compiled output. The deployed site will automatically call your Railway backend.
+
+To verify it is working:
+1. Open the live GitHub Pages site
+2. Open DevTools → **Network** tab
+3. Confirm that API requests are going to your Railway URL and returning `200 OK`
+
+---
 
 ### CORS Configuration
 
-When the front-end and back-end are on different domains, you'll need to allow cross-origin requests. Install the `cors` package:
-
-```bash
-npm install cors
-```
-
-Add to `server.js`:
+The back-end must explicitly allow requests from the front-end's domain. In `server.js`, the `allowedOrigins` array must include every domain the front-end is served from:
 
 ```js
-const cors = require('cors');
-app.use(cors({ origin: 'https://your-github-pages-url' }));
+const allowedOrigins = [
+  'http://localhost:5173',         // local development
+  'https://ahouse74.github.io',    // GitHub Pages
+  'https://strayanimaltracker.com' // custom domain (if configured)
+]
+
+app.use(cors({ origin: allowedOrigins }));
 ```
 
-- *Update with your actual URLs once deployed*
+The origin in the array must exactly match what the browser sends as the `Origin` request header — no trailing slash, correct protocol (`https://`). After changing `server.js`, commit and push to trigger a Railway redeploy.
+
+> **Troubleshooting tip:** If you have a custom domain pointing to GitHub Pages, the browser will send that domain as the `Origin`, not the `github.io` URL. Both must be in the `allowedOrigins` array if you want the site to work from both URLs.
