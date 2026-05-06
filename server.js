@@ -1,15 +1,21 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const cors = require('cors');
 
 const app = express();
-app.use(express.json()); // parse JSON request bodies
 
-// Routes
+const allowedOrigins = [
+    'http://localhost:5173',
+    'https://ahouse74.github.io'
+]
+app.use(cors({ origin: allowedOrigins }));
+
+app.use(express.json());
+
 const animalRoutes = require('./routes/animals');
 app.use('/api/animals', animalRoutes);
 
-// Connect to MongoDB, then start server
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
         console.log('Connected to MongoDB');
